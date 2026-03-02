@@ -70,6 +70,16 @@
               "icon": "lucide-bookmark",
               "title": "Bookmarks"
             }
+          },
+          {
+            "id": "b54c7f8900c8234e",
+            "type": "leaf",
+            "state": {
+              "type": "VIEW_TYPE_LONGFORM_EXPLORER",
+              "state": {},
+              "icon": "longform",
+              "title": "Longform"
+            }
           }
         ]
       }
@@ -169,11 +179,17 @@
       "pdf-plus:PDF++: Toggle auto-paste": false,
       "obsidian-kanban:Create new board": false,
       "custom-sort:Toggle custom sorting": false,
-      "templater-obsidian:Templater": false
+      "templater-obsidian:Templater": false,
+      "iconic:Open rulebook": false
     }
   },
   "active": "3a1ee50fc64a25d9",
   "lastOpenFiles": [
+    "ARCHIVE/CHANGELOG-template.md",
+    "ARCHIVE/ARCHIVE.md",
+    "ARCHIVE",
+    "module-README.md",
+    "README.md",
     "AGENTS.md",
     "kjshgkujh/Untitled.md",
     "kjshgkujh/final/final.md",
@@ -197,7 +213,6 @@
     "fldskjfl/3rd-edit/3rd-edit.md",
     "fldskjfl/3rd-edit",
     "fldskjfl/2nd-edit/2nd-edit.md",
-    "fldskjfl/2nd-edit",
     "fldskjfl/1st-edit/1st-edit.md",
     "fldskjfl/reassembly/reassembly.md",
     "fldskjfl/serial-draft/serial-draft.md",
@@ -206,10 +221,6 @@
     "ujeirguhi/3rd-edit/3rd-edit.md",
     "ujeirguhi/2nd-edit/2nd-edit.md",
     "ujeirguhi/1st-edit/1st-edit.md",
-    "ujeirguhi/reassembly/reassembly.md",
-    "ujeirguhi/ujeirguhi.md",
-    "ksjdgksjhg/final/final.md",
-    "ksjdgksjhg/3rd-edit/3rd-edit.md",
     "Untitled.canvas"
   ]
 }

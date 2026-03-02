@@ -1,14 +1,14 @@
 [
   "dataview",
-  "obsidian-icon-folder",
   "pdf-plus",
   "obsidian-minimal-settings",
   "obsidian-style-settings",
-  "obsidian-kanban",
   "color-palette",
   "fix-require-modules",
   "folder-notes",
   "custom-sort",
   "templater-obsidian",
-  "automatic-table-of-contents"
+  "automatic-table-of-contents",
+  "longform",
+  "iconic"
 ]
