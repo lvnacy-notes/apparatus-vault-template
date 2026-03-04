@@ -1,6 +1,5 @@
 [
   "dataview",
-  "pdf-plus",
   "obsidian-minimal-settings",
   "obsidian-style-settings",
   "color-palette",
@@ -10,5 +9,6 @@
   "templater-obsidian",
   "automatic-table-of-contents",
   "longform",
-  "iconic"
+  "iconic",
+  "frontmatter-modified-date"
 ]
