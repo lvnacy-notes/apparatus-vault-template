@@ -136,7 +136,7 @@ Provides complete scaffolding and workflow for creative writing projects. Includ
 
 ### Creating Modules
 
-To create a new module, see [Installing Modules](#installing-modules) below.
+To create a new module first set up a new Apparatus Vault or navigate to an existing one, then see [Installing Modules](#installing-modules) below.
 
 > [!warning]
 > The module system relies heavily on Git submodules. If unfamiliar with submodules, see the [Git submodules documentation][submodules].
@@ -152,27 +152,23 @@ To create a new module, see [Installing Modules](#installing-modules) below.
 
 ### Setting Up a New Apparatus Vault
 
-1. Start with the [Apparatus Vault Template][apparatus-template]
+1. Navigate to https://github.com/lvnacy-notes/apparatus-vault-template.git and use the template to generate a new repository
 2. Clone the repository:
+
    ```bash
-   git clone https://github.com/lvnacy-notes/apparatus-vault-template.git
-   cd apparatus-vault-template
+   git clone https://github.com/[your-username]/[your-apparatus-vault-name].git
+   cd [your-apparatus-vault-name]
    ```
 
-3. Initialize Git submodules:
-   ```bash
-   git submodule update --init --recursive
-   ```
-
-4. Open the vault in Obsidian
-5. Enable community plugins in settings
-6. Customize theme and plugin settings as needed
+3. Open the vault in Obsidian
+4. Enable community plugins in settings
+5. Customize theme and plugin settings as needed
 
 ### Installing Modules
 
 To add a module to your vault:
 
-1. Navigate to https://github.com/lvnacy-notes/apparatus-module.git and use the template to generate a new repository.
+1. Navigate to https://github.com/lvnacy-notes/apparatus-module.git and use the template to generate a new repository
 2. Run the following command to add your new module to your Apparatus vault:
 
 ```bash

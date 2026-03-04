@@ -1,4 +1,5 @@
 {
+  "defaultCodeButtonConfig": "",
   "invocableScriptsFolder": "commands",
   "mobileChangesCheckingIntervalInSeconds": 30,
   "modulesRoot": ".obsidian/js",

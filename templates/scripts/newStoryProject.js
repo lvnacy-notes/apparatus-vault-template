@@ -26,6 +26,21 @@
  *    - Establishes scene lineage tracking across stages
  *    - Provides editorial workflow documentation
  * 
+ * 4. ARCHIVE STRUCTURE CREATION
+ *    - Creates ARCHIVE directory for project history management
+ *    - Generates archive dashboard with velocity tracking and integrity checks
+ *    - Creates CHANGELOG directory with standardized session recording template
+ *    - Establishes DRAFTS directory for revision stage snapshots
+ * 
+ * FUNCTIONS:
+ * - newStoryProject: Main entry point for project generation
+ * - storyProjectSpec: Generates master project specification document
+ * - serialDraftTemplate: Creates serial draft stage configuration
+ * - reassemblyDraftTemplate: Creates reassembly stage configuration
+ * - revisionStageTemplate: Creates revision stage (1st/2nd/3rd-edit, final) configuration
+ * - generateArchiveDashboard: Creates archive operations dashboard
+ * - generateChangelogTemplate: Creates standardized changelog entry template
+ * 
  * DEPENDENCIES:
  * - Obsidian Templater plugin (tp object)
  * - Obsidian Dataview plugin (for generated queries)
@@ -59,7 +74,9 @@
  */
 module.exports = async function newStoryProject(tp) {
 
-	/** generate editorial revision structure */
+	/*****************************************
+	 * GENERATE EDITORIAL REVISION STRUCTURE *
+	 *****************************************/
 
 	// create folders for shitty first draft and editorial revisions
 	const storyName = await tp.file.folder();
@@ -97,7 +114,11 @@ module.exports = async function newStoryProject(tp) {
 
 	// set up 1st-edit
 	const firstEdit = await tp.app.vault.createFolder(`${ path }/1st-edit`);
-	const firstEditContent = firstEditTemplate(tp, { storyName, storyNameNoSpaces });
+	const firstEditContent = revisionStageTemplate(tp, {
+		storyName,
+		storyNameNoSpaces,
+		priorStage: reassembly.basename
+	});
 	const firstEditNote = await tp.file.create_new(
 		firstEditContent,
 		'1st-edit',
@@ -108,7 +129,11 @@ module.exports = async function newStoryProject(tp) {
 
 	// set up 2nd-edit
 	const secondEdit = await tp.app.vault.createFolder(`${ path }/2nd-edit`);
-	const secondEditContent = secondEditTemplate(tp, { storyName, storyNameNoSpaces });
+	const secondEditContent = revisionStageTemplate(tp, {
+		storyName,
+		storyNameNoSpaces,
+		priorStage: firstEdit.basename
+	});
 	const secondEditNote = await tp.file.create_new(
 		secondEditContent,
 		'2nd-edit',
@@ -119,7 +144,11 @@ module.exports = async function newStoryProject(tp) {
 
 	// set up 3rd-edit
 	const thirdEdit = await tp.app.vault.createFolder(`${ path }/3rd-edit`);
-	const thirdEditContent = thirdEditTemplate(tp, { storyName, storyNameNoSpaces });
+	const thirdEditContent = revisionStageTemplate(tp, {
+		storyName,
+		storyNameNoSpaces,
+		priorStage: secondEdit.basename
+	});
 	const thirdEditNote = await tp.file.create_new(
 		thirdEditContent,
 		'3rd-edit',
@@ -130,7 +159,11 @@ module.exports = async function newStoryProject(tp) {
 
 	// set up final
 	const final = await tp.app.vault.createFolder(`${ path }/final`);
-	const finalEditContent = finalEditTemplate(tp, { storyName, storyNameNoSpaces });
+	const finalEditContent = revisionStageTemplate(tp, {
+		storyName,
+		storyNameNoSpaces,
+		priorStage: thirdEdit.basename
+	});
 	const finalEditNote = await tp.file.create_new(
 		finalEditContent,
 		'final',
@@ -154,6 +187,39 @@ module.exports = async function newStoryProject(tp) {
 	await tp.app.vault.append(
 		storyFolderNote,
 		storySpecContent
+	);
+
+	/******************************
+	 * GENERATE ARCHIVE STRUCTURE *
+	 ******************************/
+
+	// create the archive directory and dashboard
+	const archiveDirectory = await tp.app.vault.createFolder(`${ path }/ARCHIVE`);
+	const archiveREADMEContent = generateArchiveDashboard(storyNameNoSpaces);
+	await tp.file.create_new(
+		archiveREADMEContent,
+		'ARCHIVE',
+		false,
+		archiveDirectory
+	);
+
+	// create changelog directory and template
+	const changelogDirectory = await tp.app.vault.createFolder(`${ path }/ARCHIVE/CHANGELOG`);
+	const changelogTemplate = generateChangelogTemplate({ storyNameNoSpaces });
+	await tp.file.create_new(
+		changelogTemplate,
+		'CHANGELOG',
+		false,
+		changelogDirectory
+	);
+
+
+	const draftsArchiveDirectory = await tp.app.vault.createFolder(`${ path }/ARCHIVE/DRAFTS`);
+	await tp.file.create_new(
+		'',
+		'DRAFTS',
+		false,
+		draftsArchiveDirectory
 	);
 
 }
@@ -855,8 +921,8 @@ function serialDraftTemplate(tp, options) {
 	} = options;
 
 	return `---
-class: story draft
-category: serial
+class: serial
+category: draft
 created:
 updated:
 stage: serial-draft
@@ -865,7 +931,7 @@ longform:
   format: scenes
   title: ${ storyName }
   draftTitle: ${ tp.file.folder() }
-  workflow: Revision Workflow
+  workflow: Default Workflow
   sceneFolder: /
   scenes:
 context:
@@ -873,7 +939,155 @@ tags:
   - ${ storyNameNoSpaces }
 ---
 
-# synopsis
+# overview
+
+# contents
+
+\`\`\`toc
+\`\`\`
+
+# serial dashboard
+Tracking serial publication workflow, metadata integrity, and readiness for reassembly stage advancement.
+
+## scene metadata management
+Validates that all serial-draft scenes have required metadata fields: stage, serial-status, and chapter.
+
+### incomplete metadata
+\`\`\`dataviewjs
+const serialScenes = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "scene")
+  .where(p => p.stage === "serial-draft");
+
+const serialSceneIncomplete = [];
+
+for (const scene of serialScenes) {
+  const hasStage = scene.stage !== undefined && scene.stage !== null;
+  const hasSerialStatus = scene["serial-status"] !== undefined && scene["serial-status"] !== null;
+  const hasChapter = scene.chapter !== undefined && scene.chapter !== null;
+  
+  if (!(hasStage && hasSerialStatus && hasChapter)) {
+    const missing = [];
+    if (!hasStage) missing.push("stage");
+    if (!hasSerialStatus) missing.push("serial-status");
+    if (!hasChapter) missing.push("chapter");
+    
+    serialSceneIncomplete.push({
+      link: scene.file.link,
+      missing: missing.join(", ")
+    });
+  }
+}
+
+if (serialSceneIncomplete.length === 0) {
+  dv.paragraph("All serial scenes have complete metadata.");
+} else {
+  dv.table(
+    ["Scene", "Missing Fields"],
+    serialSceneIncomplete.map(s => [s.link, s.missing])
+  );
+}
+\`\`\`
+
+### serial scene metadata completeness
+\`\`\`dataviewjs
+const serialScenes = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "scene")
+  .where(p => p.stage === "serial-draft");
+
+let complete = 0;
+let incomplete = 0;
+
+for (const scene of serialScenes) {
+  const hasStage = scene.stage !== undefined && scene.stage !== null;
+  const hasSerialStatus = scene["serial-status"] !== undefined && scene["serial-status"] !== null;
+  const hasChapter = scene.chapter !== undefined && scene.chapter !== null;
+  
+  if (hasStage && hasSerialStatus && hasChapter) {
+    complete++;
+  } else {
+    incomplete++;
+  }
+}
+
+if (complete === 0 && incomplete === 0) {
+  dv.paragraph("No serial scenes found.");
+} else {
+  let mermaidCode = "pie title serial scene metadata completeness\\n";
+  mermaidCode += \`    "complete" : \${complete}\\n\`;
+  mermaidCode += \`    "incomplete" : \${incomplete}\\n\`;
+  dv.paragraph("\`\`\`mermaid\\n" + mermaidCode + "\`\`\`");
+}
+
+dv.paragraph(\`**Complete**: \${complete} | **Incomplete**: \${incomplete} | **Total**: \${complete + incomplete}\`);
+\`\`\`
+
+## status distribution
+Breakdown of serial-status values across all serial-draft scenes (published, active, backlog, etc.).
+
+\`\`\`dataviewjs
+const serialScenes = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "scene")
+  .where(p => p.stage === "serial-draft");
+
+const statusCounts = {};
+for (const scene of serialScenes) {
+  const status = scene["serial-status"] || "unset";
+  statusCounts[status] = (statusCounts[status] || 0) + 1;
+}
+
+const total = Object.values(statusCounts).reduce((a, b) => a + b, 0);
+
+if (total === 0) {
+  dv.paragraph("No serial-draft scenes found.");
+} else {
+  let mermaidCode = "pie title serial-draft status distribution\n";
+  for (const [status, count] of Object.entries(statusCounts)) {
+    mermaidCode += \`    "\${status}" : \${count}\\n\`;
+  }
+  dv.paragraph("\`\`\`mermaid\\n" + mermaidCode + "\`\`\`");
+}
+\`\`\`
+
+## promotion readiness gate
+Tracks which serial-draft scenes have been accounted for in reassembly context fields. When 100%, all serial content has been incorporated into the reassembly stage.
+
+\`\`\`dataviewjs
+const serialScenes = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "scene")
+  .where(p => p.stage === "serial-draft");
+
+const serialLinks = new Set();
+const reassemblyScenes = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "scene")
+  .where(p => p.stage === "reassembly");
+
+for (const rScene of reassemblyScenes) {
+  if (rScene.context && Array.isArray(rScene.context)) {
+    for (const ctx of rScene.context) {
+      const ctxPath = ctx.path || String(ctx);
+      if (ctxPath.includes("serial-draft")) {
+        const filename = ctxPath.split('/').pop();
+        serialLinks.add(filename);
+      }
+    }
+  }
+}
+
+const total = serialScenes.length;
+const accounted = serialLinks.size;
+const percentage = total > 0 ? Math.round((accounted / total) * 100) : 0;
+
+if (total === 0) {
+  dv.paragraph("No serial-draft scenes found.");
+} else {
+  let mermaidCode = "pie title serial-draft promotion readiness\\n";
+  mermaidCode += \`    "Accounted: \${accounted}" : \${accounted}\\n\`;
+  mermaidCode += \`    "Pending: \${total - accounted}" : \${total - accounted}\\n\`;
+  dv.paragraph("\`\`\`mermaid\\n" + mermaidCode + "\`\`\`");
+  dv.paragraph(\`\${percentage}% of serial-draft scenes are accounted for in reassembly.\`);
+}
+\`\`\`
+
 
 # story elements
 
@@ -940,7 +1154,7 @@ function reassemblyDraftTemplate(tp, options) {
 	} = options;
 
 	return `---
-class: story draft
+class: revision
 category: draft
 created:
 updated:
@@ -950,7 +1164,7 @@ longform:
   format: scenes
   title: ${ storyName }
   draftTitle: ${ tp.file.folder() }
-  workflow: Revision Workflow
+  workflow: Default Workflow
   sceneFolder: /
   scenes:
 context:
@@ -958,101 +1172,279 @@ tags:
   - ${ storyNameNoSpaces }
 ---
 
-# scene tracking
+# contents
 
-## serial draft reassembly
+\`\`\`toc
+\`\`\`
+
+# reassembly editorial dashboard
+Tracking revision stage workflow, scene metadata integrity, and readiness for revision stage advancement.
+
+## unresolved comments
+\`\`\`dataviewjs
+const pages = dv.pages("#${ storyNameNoSpaces }")
+  .where(p => \`\${p.class}\`.includes("scene"))
+  .where(p => \`\${p.stage}\`.includes("reassembly"));
+
+const results = [];
+for (const page of pages) {
+  const file = app.vault.getAbstractFileByPath(page.file.path);
+  if (!file) continue;
+  const content = await app.vault.read(file);
+  if (content && content.includes("UNRESOLVED")) {
+    results.push(page.file.link);
+  }
+}
+
+dv.list(results);
+\`\`\`
+
+## scene metadata management
+Validates that all draft scenes have required metadata fields: stage, stage-status, chapter, and context.
+
+### incomplete metadata
+\`\`\`dataviewjs
+const reassemblyScenes = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "scene")
+  .where(p => p.stage === "reassembly");
+
+const reassemblySceneIncomplete = [];
+
+for (const scene of reassemblyScenes) {
+  const hasStage = scene.stage !== undefined && scene.stage !== null;
+  const hasStageStatus = scene["stage-status"] !== undefined && scene["stage-status"] !== null;
+  const hasChapter = scene.chapter !== undefined && scene.chapter !== null;
+  const hasContext = scene.context !== undefined && scene.context !== null;
+
+  if (!(hasStage && hasStageStatus && hasChapter && hasContext)) {
+    const missing = [];
+    if (!hasStage) missing.push("stage");
+    if (!hasStageStatus) missing.push("stage-status");
+    if (!hasChapter) missing.push("chapter");
+    if (!hasContext) missing.push("context");
+
+    reassemblySceneIncomplete.push({
+      link: scene.file.link,
+      missing: missing.join(", ")
+    });
+  }
+}
+
+if (reassemblySceneIncomplete.length === 0) {
+  dv.paragraph("All reassembly scenes have complete metadata.");
+} else {
+  dv.table(
+    ["Scene", "Missing Fields"],
+    reassemblySceneIncomplete.map(s => [s.link, s.missing])
+  );
+}
+\`\`\`
+
+### reassembly scene metadata completeness
+\`\`\`dataviewjs
+const reassemblyScenes = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "scene")
+  .where(p => p.stage === "reassembly");
+
+let complete = 0;
+let incomplete = 0;
+
+for (const scene of reassemblyScenes) {
+  const hasStage = scene.stage !== undefined && scene.stage !== null;
+  const hasStageStatus = scene["stage-status"] !== undefined && scene["stage-status"] !== null;
+  const hasChapter = scene.chapter !== undefined && scene.chapter !== null;
+  const hasContext = scene.context !== undefined && scene.context !== null;
+
+  if (hasStage && hasStageStatus && hasChapter && hasContext) {
+    complete++;
+  } else {
+    incomplete++;
+  }
+}
+
+if (complete === 0 && incomplete === 0) {
+  dv.paragraph("No reassembly scenes found.");
+} else {
+  let mermaidCode = "pie title reassembly scene metadata completeness\\n";
+  mermaidCode += \`    "complete" : \${complete}\\n\`;
+  mermaidCode += \`    "incomplete" : \${incomplete}\\n\`;
+  dv.paragraph("\`\`\`mermaid\\n" + mermaidCode + "\`\`\`");
+}
+
+dv.paragraph(\`**Complete**: \${complete} | **Incomplete**: \${incomplete} | **Total**: \${complete + incomplete}\`);
+\`\`\`
+
+## status distribution
+Breakdown of status values across all draft scenes (approved, in-progress, needs-revision, etc.).
+
+\`\`\`dataviewjs
+const reassemblyScenes = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "scene")
+  .where(p => p.stage === "reassembly");
+
+const statusCounts = {};
+for (const scene of reassemblyScenes) {
+  const status = scene["stage-status"] || "unset";
+  statusCounts[status] = (statusCounts[status] || 0) + 1;
+}
+
+const total = Object.values(statusCounts).reduce((a, b) => a + b, 0);
+
+if (total === 0) {
+  dv.paragraph("No reassembly scenes found.");
+} else {
+  let mermaidCode = "pie title reassembly status distribution\\n";
+  for (const [status, count] of Object.entries(statusCounts)) {
+    mermaidCode += \`    "\${status}" : \${count}\\n\`;
+  }
+  dv.paragraph("\`\`\`mermaid\\n" + mermaidCode + "\`\`\`");
+}
+\`\`\`
+
+## scene lineage
+Tracking scenes across revision stages. The Story Spec contains the full set of tables to track scenes from their inception through the workflow. Each draft tracks its specific scene mapping from the prior revision stage.
+
+### lineage completeness
+\`\`\`dataviewjs
+const reassemblyScenes = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "scene")
+  .where(p => p.stage === "reassembly");
+
+const scenesByLineage = { documented: [], undocumented: [] };
+
+for (const scene of reassemblyScenes) {
+  if (scene.context && (Array.isArray(scene.context) ? scene.context.length > 0 : true)) {
+    scenesByLineage.documented.push(scene.file.link);
+  } else {
+    scenesByLineage.undocumented.push(scene.file.link);
+  }
+}
+
+if (scenesByLineage.undocumented.length === 0) {
+  dv.paragraph("✓ All reassembly scenes have documented lineage.");
+} else {
+  dv.paragraph(\`**Lineage Documented**: \${scenesByLineage.documented.length} scenes\`);
+  if (scenesByLineage.documented.length > 0) {
+    dv.list(scenesByLineage.documented);
+  }
+  dv.paragraph(\`**Lineage Pending**: \${scenesByLineage.undocumented.length} scenes\`);
+  dv.list(scenesByLineage.undocumented);
+}
+\`\`\`
+
+### serial draft reassembly
 
 **Reassembly Scene Mapping to Serial-Draft Chapters:**
 \`\`\`dataview
 TABLE WITHOUT ID
-	file.link as "Reassembly Scene",
-	context as "Serial Chapters",
-stage-status as Status
+  file.link as "Reassembly Scene",
+  context as "Serial Chapters",
+  stage-status as Status
 FROM
 	#${ storyNameNoSpaces }
 WHERE
-	contains(class, "scene") AND
-	contains(stage, "reassembly")
+  contains(class, "scene") AND
+  contains(stage, "reassembly")
 SORT
-	file.name ASC
+  file.name ASC
 \`\`\`
 
 **Serial Chapters Mapped to Reassembly Scenes:**
 \`\`\`dataview
 TABLE WITHOUT ID
-	serial as "Serial Ch",
-	rows.file.link as "Reassembly Scenes"
+  serial as "Serial Ch",
+  rows.file.link as "Reassembly Scenes"
 FROM
-	#${ storyNameNoSpaces }
+  #${ storyNameNoSpaces }
 WHERE
 	contains(class, "scene") AND
 	contains(stage, "reassembly") AND
 	context
 FLATTEN
-	context as serial
+  context as serial
 GROUP BY
-	serial
+  serial
 SORT
-	serial ASC
+  serial ASC
 \`\`\`
 
-# issue tracking
+## promotion readiness gate
+Tracks which serial-draft scenes have been accounted for in reassembly context fields. When 100%, all serial content has been incorporated into the reassembly stage.
 
-**Scenes with Unresolved Comments:**
 \`\`\`dataviewjs
-const pages = dv.pages("#${ storyNameNoSpaces }")
-	.where(p => \`\${p.class}\`.includes("scene"))
-	.where(p => \`\${p.stage}\`.includes("reassembly"));
+const serialScenes = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "scene")
+  .where(p => p.stage === "serial-draft");
 
-const results = [];
-for (const page of pages) {
-	const file = app.vault.getAbstractFileByPath(page.file.path);
-	if (!file) continue;
-	const content = await app.vault.read(file);
-	if (content && content.includes("[UNRESOLVED]")) {
-		results.push(page.file.link);
-	}
+const serialLinks = new Set();
+const reassemblyScenes = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "scene")
+  .where(p => p.stage === "reassembly");
+
+for (const rScene of reassemblyScenes) {
+  if (rScene.context && Array.isArray(rScene.context)) {
+    for (const ctx of rScene.context) {
+      const ctxPath = ctx.path || String(ctx);
+      if (ctxPath.includes("serial-draft")) {
+        const filename = ctxPath.split('/').pop();
+        serialLinks.add(filename);
+      }
+    }
+  }
 }
 
-dv.list(results);
+const total = serialScenes.length;
+const accounted = serialLinks.size;
+const percentage = total > 0 ? Math.round((accounted / total) * 100) : 0;
+
+if (total === 0) {
+  dv.paragraph("No serial-draft scenes found.");
+} else {
+  let mermaidCode = "pie title reassembly promotion readiness\\n";
+  mermaidCode += \`    "Accounted: \${accounted}" : \${accounted}\\n\`;
+  mermaidCode += \`    "Pending: \${total - accounted}" : \${total - accounted}\\n\`;
+  dv.paragraph("\`\`\`mermaid\\n" + mermaidCode + "\`\`\`");
+  dv.paragraph(\`\${percentage}% of serial-draft scenes are accounted for in reassembly.\`);
+}
 \`\`\`
 
 `
 }
 
 /**
- * Generates the first edit stage configuration document.
+ * Generates a revision stage configuration document.
  * 
- * Creates a Longform project configuration for the developmental editing pass.
- * Focuses on narrative arc, structure, and overall story coherence. Includes
- * scene lineage tracking from reassembly and editorial comment tracking.
+ * Creates a Longform project configuration for one of four editing passes.
+ * Includes scene lineage tracking from reassembly and editorial comment 
+ * tracking.
  * 
- * @function firstEditTemplate
+ * @function revisionStageTemplate
  * @param {Object} tp - Templater plugin API object
  * @param {Object} options - Template options
  * @param {string} options.storyName - Story project name
  * @param {string} options.storyNameNoSpaces - Story name formatted for tags (lowercase, hyphenated)
- * @returns {string} Markdown content for first edit stage configuration
+ * @returns {string} Markdown content for revision stage configuration
  */
-function firstEditTemplate(tp, options) {
+function revisionStageTemplate(tp, options) {
 
-		const {
-				storyName,
-				storyNameNoSpaces
-		} = options;
+	const {
+			storyName,
+			storyNameNoSpaces,
+			priorStage
+	} = options;
 
-		return `---
-class: story draft
+	return `---
+class: revision
 category: draft
 created:
 updated:
-stage: 1st-edit
+stage: ${ tp.file.folder() }
 stage-status:
 longform:
   format: scenes
   title: ${ storyName }
   draftTitle: ${ tp.file.folder() }
-  workflow: Revision Workflow
+  workflow: Default Workflow
   sceneFolder: /
   scenes:
 context:
@@ -1060,34 +1452,50 @@ tags:
   - ${ storyNameNoSpaces }
 ---
 
-# scene tracking
+# contents
 
-## Reassembly → 1st-edit
-\`\`\`dataview
-TABLE WITHOUT ID
-	source as "Reassembly Scene",
-	rows.file.link as "1st-edit Scenes"
-FROM
-	#${ storyNameNoSpaces }
-WHERE
-	contains(class, "scene") AND
-	contains(stage, "1st-edit") AND
-	context
-FLATTEN
-	context as source
-GROUP BY
-	source
-SORT
-	source ASC
+\`\`\`toc
 \`\`\`
 
-# in-line comments tracking
+# first edit editorial dashboard
+Tracking revision stage workflow, scene metadata integrity, and readiness for revision stage advancement.
 
-**Scenes with Editorial Comments (ME tag):** 
+## carryover debt
+
 \`\`\`dataviewjs
 const pages = dv.pages("#${ storyNameNoSpaces }")
 	.where(p => \`\${p.class}\`.includes("scene"))
-	.where(p => \`\${p.stage}\`.includes("1st-edit")
+	.where(p => \`\${p.stage}\`.includes("${ tp.file.folder() }"));
+
+const results = [];
+const markers = ["<!-- TODO:", "<!-- ME:", "<!-- UNRESOLVED"];
+
+for (const page of pages) {
+	const file = app.vault.getAbstractFileByPath(page.file.path);
+	if (!file) continue;
+	const content = await app.vault.read(file);
+	for (const marker of markers) {
+		if (content && content.includes(marker)) {
+			results.push(page.file.link);
+			break;
+		}
+	}
+}
+
+if (results.length === 0) {
+	dv.paragraph("✓ No carryover debt.");
+} else {
+	dv.list(results);
+}
+\`\`\`
+
+## editorial comments
+
+### '\`<!-- ME:\`' comments
+\`\`\`dataviewjs
+const pages = dv.pages("#${ storyNameNoSpaces }")
+	.where(p => \`\${p.class}\`.includes("scene"))
+	.where(p => \`\${p.stage}\`.includes("${ tp.file.folder() }")
 	);
 
 const results = [];
@@ -1103,61 +1511,146 @@ for (const page of pages) {
 dv.list(results);
 \`\`\`
 
-`
+## scene metadata management
+Validates that all draft scenes have required metadata fields: stage, stage-status, chapter, and context.
+
+### incomplete metadata
+\`\`\`dataviewjs
+const stageScenes = dv.pages('#${ storyNameNoSpaces }')
+	.where(p => p.class === "scene")
+	.where(p => p.stage === "${ tp.file.folder() }");
+
+const stageIncomplete = [];
+
+for (const scene of stageScenes) {
+	const hasStage = scene.stage !== undefined && scene.stage !== null;
+	const hasStageStatus = scene["stage-status"] !== undefined && scene["stage-status"] !== null;
+	const hasChapter = scene.chapter !== undefined && scene.chapter !== null;
+	const hasContext = scene.context !== undefined && scene.context !== null;
+
+	if (!(hasStage && hasStageStatus && hasChapter && hasContext)) {
+		const missing = [];
+		if (!hasStage) missing.push("stage");
+		if (!hasStageStatus) missing.push("stage-status");
+		if (!hasChapter) missing.push("chapter");
+		if (!hasContext) missing.push("context");
+
+		stageIncomplete.push({
+			link: scene.file.link,
+			missing: missing.join(", ")
+		});
+	}
 }
 
-/**
- * Generates the second edit stage configuration document.
- * 
- * Creates a Longform project configuration for the copy editing and continuity
- * verification pass. Ensures consistency in plot, character development, and
- * world-building details. Includes scene lineage tracking and comment tracking.
- * 
- * @function secondEditTemplate
- * @param {Object} tp - Templater plugin API object
- * @param {Object} options - Template options
- * @param {string} options.storyName - Story project name
- * @param {string} options.storyNameNoSpaces - Story name formatted for tags (lowercase, hyphenated)
- * @returns {string} Markdown content for second edit stage configuration
- */
-function secondEditTemplate(tp, options) {
+if (stageIncomplete.length === 0) {
+	dv.paragraph("All ${ tp.file.folder() } scenes have complete metadata.");
+} else {
+	dv.table(
+		["Scene", "Missing Fields"],
+		stageIncomplete.map(s => [s.link, s.missing])
+	);
+}
+\`\`\`
 
-		const {
-				storyName,
-				storyNameNoSpaces
-		} = options;
+### ${ tp.file.folder() } scene metadata completeness
+\`\`\`dataviewjs
+const stageScenes = dv.pages('#${ storyNameNoSpaces }')
+	.where(p => p.class === "scene")
+	.where(p => p.stage === "${ tp.file.folder() }");
 
-		return `---
-class: story draft
-category: draft
-created:
-updated:
-stage: 2nd-edit
-stage-status:
-longform:
-  format: scenes
-  title: ${ storyName }
-  draftTitle: ${ tp.file.folder() }
-  workflow: Revision Workflow
-  sceneFolder: /
-  scenes:
-context:
-tags:
-  - ${ storyNameNoSpaces }
----
+let complete = 0;
+let incomplete = 0;
 
-# scene tracking
+for (const scene of stageScenes) {
+	const hasStage = scene.stage !== undefined && scene.stage !== null;
+	const hasStageStatus = scene["stage-status"] !== undefined && scene["stage-status"] !== null;
+	const hasChapter = scene.chapter !== undefined && scene.chapter !== null;
+	const hasContext = scene.context !== undefined && scene.context !== null;
 
-## 1st-edit → 2nd-edit
+	if (hasStage && hasStageStatus && hasChapter && hasContext) {
+		complete++;
+	} else {
+		incomplete++;
+	}
+}
+
+if (complete === 0 && incomplete === 0) {
+	dv.paragraph("No ${ tp.file.folder() } scenes found.");
+} else {
+	let mermaidCode = "pie title first edit scene metadata completeness\\n";
+	mermaidCode += \`    "complete" : \${complete}\\n\`;
+	mermaidCode += \`    "incomplete" : \${incomplete}\\n\`;
+	dv.paragraph("\`\`\`mermaid\\n" + mermaidCode + "\`\`\`");
+}
+
+dv.paragraph(\`**Complete**: \${complete} | **Incomplete**: \${incomplete} | **Total**: \{complete + incomplete}\`);
+\`\`\`
+
+## status distribution
+Breakdown of status values across all draft scenes (approved, in-progress, needs-revision, etc.).
+
+\`\`\`dataviewjs
+const stageScenes = dv.pages('#${ storyNameNoSpaces }')
+	.where(p => p.class === "scene")
+	.where(p => p.stage === "${ tp.file.folder() }");
+
+const statusCounts = {};
+for (const scene of stageScenes) {
+	const status = scene["stage-status"] || "unset";
+	statusCounts[status] = (statusCounts[status] || 0) + 1;
+}
+
+const total = Object.values(statusCounts).reduce((a, b) => a + b, 0);
+
+if (total === 0) {
+	dv.paragraph("No ${ tp.file.folder() } scenes found.");
+} else {
+	let mermaidCode = "pie title first edit status distribution\\n";
+	for (const [status, count] of Object.entries(statusCounts)) {
+		mermaidCode += \`    "\${status}" : \${count}\\n\`;
+	}
+	dv.paragraph("\`\`\`mermaid\\n" + mermaidCode + "\`\`\`");
+}
+\`\`\`
+
+## scene lineage
+Tracking scenes across revision stages. The Story Spec contains the full set of tables to track scenes from their inception through the workflow. Each draft tracks its specific scene mapping from the prior revision stage.
+
+### lineage completeness
+
+\`\`\`dataviewjs
+const stageScenes = dv.pages('#${ storyNameNoSpaces }')
+	.where(p => p.class === "scene")
+	.where(p => p.stage === "${ tp.file.folder() }");
+
+const scenesByLineage = { documented: [], undocumented: [] };
+
+for (const scene of stageScenes) {
+	if (scene.context && (Array.isArray(scene.context) ? scene.context.length > 0 : true)) {
+		scenesByLineage.documented.push(scene.file.link);
+	} else {
+		scenesByLineage.undocumented.push(scene.file.link);
+	}
+}
+
+if (scenesByLineage.undocumented.length === 0) {
+	dv.paragraph("✓ All ${ tp.file.folder() } scenes have documented lineage.");
+} else {
+	dv.paragraph(\`**Lineage Documented**: \${scenesByLineage.documented.length} scenes | **Lineage Pending**: \${scenesByLineage.undocumented.length} scenes\`);
+}
+\`\`\`
+
+
+### cross-stage lineage: ${ priorStage } → ${ tp.file.folder() }
 \`\`\`dataview
 TABLE WITHOUT ID
-	source as "1st-edit Scene",
-	rows.file.link as "2nd-edit Scenes"
+	source as "${ priorStage } Scene",
+	rows.file.link as "${ tp.file.folder() } Scenes"
 FROM
 	#${ storyNameNoSpaces }
 WHERE
 	contains(class, "scene") AND
-	contains(stage, "2nd-edit") AND
+	contains(stage, "${ tp.file.folder() }") AND
 	context
 FLATTEN
 	context as source
@@ -1167,200 +1660,811 @@ SORT
 	source ASC
 \`\`\`
 
-# in-line comments tracking
-
-**Scenes with Editorial Comments (ME tag):** 
-\`\`\`dataviewjs
-const pages = dv.pages("#${ storyNameNoSpaces }")
-	.where(p => \`\${p.class}\`.includes("scene"))
-	.where(p => \`\${p.stage}\`.includes("2nd-edit")
-	);
-
-const results = [];
-for (const page of pages) {
-	const file = app.vault.getAbstractFileByPath(page.file.path);
-	if (!file) continue;
-	const content = await app.vault.read(file);
-	if (content && content.includes("<!-- ME:")) {
-		results.push(page.file.link);
-	}
-}
-
-dv.list(results);
-\`\`\`
-
 `
 }
 
 /**
- * Generates the third edit stage configuration document.
+ * Generates the archive operations dashboard and documentation.
  * 
- * Creates a Longform project configuration for the line editing and prose
- * polish pass. Focuses on sentence-level improvements, word choice, rhythm,
- * and stylistic refinement. Includes scene lineage tracking and comment tracking.
+ * Creates a comprehensive dashboard for tracking project history, session velocity,
+ * work patterns, and metadata integrity across all file classes. Includes operational
+ * governance guidelines for changelog capture and draft archival processes.
  * 
- * @function thirdEditTemplate
- * @param {Object} tp - Templater plugin API object
- * @param {Object} options - Template options
- * @param {string} options.storyName - Story project name
- * @param {string} options.storyNameNoSpaces - Story name formatted for tags (lowercase, hyphenated)
- * @returns {string} Markdown content for third edit stage configuration
+ * @function generateArchiveDashboard
+ * @param {string} storyNameNoSpaces - Story name formatted for tags (lowercase, hyphenated)
+ * @returns {string} Markdown content with Dataview/DataviewJS queries for archive management
  */
-function thirdEditTemplate(tp, options) {
+function generateArchiveDashboard(storyNameNoSpaces) {
 
-		const {
-				storyName,
-				storyNameNoSpaces
-		} = options;
-
-		return `---
-class: story draft
-category: draft
-created:
+	return `---
+class: archive
+category:
+  - operations
+  - dashboard
+  - specification
 updated:
-stage: 3rd-edit
-stage-status:
-longform:
-  format: scenes
-  title: ${ storyName }
-  draftTitle: ${ tp.file.folder() }
-  workflow: Revision Workflow
-  sceneFolder: /
-  scenes:
-context:
+created:
 tags:
   - ${ storyNameNoSpaces }
 ---
 
-# scene tracking
+# ARCHIVE Operations Guide
 
-## 2nd-edit → 3rd-edit
+# contents
+\`\`\`toc
+\`\`\`
+
+---
+
+# archive dashboard
+
+*These queries track project velocity, session patterns, and archival integrity across the lifespan of the work.*
+
+## changelog velocity
+
+### recent activity (last 30 days)
 \`\`\`dataview
 TABLE WITHOUT ID
-	source as "2nd-edit Scene",
-	rows.file.link as "3rd-edit Scenes"
+	file.link as Entry,
+	session-type as Type,
+	scenes-edited as "Scenes Edited",
+	files-modified as Modified,
+	files-created as Created,
+	files-archived as "Archived/Removed",
+	stage-transition as "Stage Transition"
+FROM
+	#${ storyNameNoSpaces } AND
+WHERE
+	contains(category, "changelog") AND
+	created >= date(today) - dur(30 days)
+SORT
+	created DESC
+\`\`\`
+
+### session frequency (last 90 days)
+\`\`\`dataviewjs
+const changelogs = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.category && p.category.includes("changelog"))
+  .where(p => p.created >= dv.date("today") - dv.duration("90 days"));
+
+const total = changelogs.length;
+const weeks = 13; // ~90 days / 7
+const avgPerWeek = (total / weeks).toFixed(1);
+
+dv.paragraph(\`**Total entries**: \${total} | **Average**: \${avgPerWeek} sessions/week\`);
+
+// Weekly activity chart
+const weeklyData = {};
+for (const log of changelogs) {
+  if (log.created) {
+    const weekStart = log.created.startOf('week');
+    const weekKey = weekStart.toFormat('yyyy-MM-dd');
+    weeklyData[weekKey] = (weeklyData[weekKey] || 0) + 1;
+  }
+}
+
+const sortedWeeks = Object.keys(weeklyData).sort();
+if (sortedWeeks.length > 0) {
+  const categories = sortedWeeks.map(w => \`"\${w}"\`);
+  const values = sortedWeeks.map(w => weeklyData[w]);
+  
+  dv.paragraph(\`\\\`\\\`\\\`mermaid\\n%%{init: {'theme':'base'}}%%\\nxychart-beta\\n    title "weekly session count (last 90 days)"\\n    x-axis [\${categories.join(", ")}]\\n    y-axis sessions 0 --> \${Math.max(...values) + 2}\\n    bar [\${values.join(", ")}]\\n\\\`\\\`\\\`\`);
+}
+\`\`\`
+
+### work distribution (last 30 days)
+
+\`\`\`dataviewjs
+const changelogs = dv.pages("#${ storyNameNoSpaces }")
+  .where(p => p.category && p.category.includes("changelog"))
+  .where(p => p.created >= dv.date("today") - dv.duration("30 days"));
+
+const byType = {};
+for (const log of changelogs) {
+  const type = log["session-type"] || "unspecified";
+  byType[type] = (byType[type] || 0) + 1;
+}
+
+if (Object.keys(byType).length === 0) {
+  dv.paragraph("No sessions in the last 30 days.");
+} else {
+  let mermaidCode = "pie title work distribution (last 30 days)\\n";
+  for (const [type, count] of Object.entries(byType)) {
+    mermaidCode += \`    "\${type}" : \${count}\\n\`;
+  }
+  dv.paragraph("\`\`\`mermaid\\n" + mermaidCode + "\`\`\`");
+}
+\`\`\`
+
+### session intensity (last 30 days)
+\`\`\`dataviewjs
+const changelogs = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.category && p.category.includes("changelog"))
+  .where(p => p.created >= dv.date("today") - dv.duration("30 days"));
+
+const sessions = changelogs.values.map(log => ({
+  link: log.file.link,
+  date: log.created,
+  total: (log["files-modified"] || 0) + (log["files-created"] || 0) + (log["files-archived"] || 0)
+}));
+
+sessions.sort((a, b) => b.total - a.total);
+
+const topSessions = sessions.slice(0, 10);
+
+if (topSessions.length === 0) {
+  dv.paragraph("No sessions in the last 30 days.");
+} else {
+  dv.table(
+    ["Session", "Date", "Files Touched"],
+    topSessions.map(s => [s.link, s.date?.toFormat("yyyy-MM-dd") || "—", s.total])
+  );
+}
+\`\`\`
+
+---
+
+## archive integrity
+
+This section tracks metadata completeness across all file classes in the project. Each class has different required fields based on its role in the workflow.
+
+### story class
+\`\`\`dataviewjs
+const storyFiles = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "story");
+
+let storyComplete = 0;
+const storyIncomplete = [];
+
+for (const file of storyFiles) {
+  const hasStage = file.stage !== undefined && file.stage !== null;
+  const hasStageStatus = file["stage-status"] !== undefined && file["stage-status"] !== null;
+  const hasSerialDraft = file["serial-draft"] !== undefined && file["serial-draft"] !== null;
+  const hasReassembly = file.reassembly !== undefined && file.reassembly !== null;
+  
+  if (hasStage && hasStageStatus && hasSerialDraft && hasReassembly) {
+    storyComplete++;
+  } else {
+    const missing = [];
+    if (!hasStage) missing.push("stage");
+    if (!hasStageStatus) missing.push("stage-status");
+    if (!hasSerialDraft) missing.push("serial-draft");
+    if (!hasReassembly) missing.push("reassembly");
+    
+    storyIncomplete.push({
+      link: file.file.link,
+      missing: missing.join(", ")
+    });
+  }
+}
+
+dv.paragraph(\`**Story Files**: \${storyComplete} complete, \${storyIncomplete.length} incomplete\`);
+
+if (storyIncomplete.length > 0) {
+  dv.table(
+    ["File", "Missing Fields"],
+    storyIncomplete.map(f => [f.link, f.missing])
+  );
+}
+\`\`\`
+
+### serial class
+\`\`\`dataviewjs
+const serialFiles = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "serial");
+
+const serialRows = [];
+let serialComplete = 0;
+
+for (const file of serialFiles) {
+  const longform = file.longform || {};
+  
+  const hasStageStatus = file["stage-status"] !== undefined && file["stage-status"] !== null;
+  const hasFormat = longform.format !== undefined && longform.format !== null;
+  const hasTitle = longform.title !== undefined && longform.title !== null;
+  const hasDraftTitle = longform.draftTitle !== undefined && longform.draftTitle !== null;
+  const hasWorkflow = longform.workflow !== undefined && longform.workflow !== null;
+  
+  if (hasStageStatus && hasFormat && hasTitle && hasDraftTitle && hasWorkflow) {
+    serialComplete++;
+  }
+  
+  serialRows.push([
+    file.file.link,
+    hasStageStatus ? "✓" : "—",
+    hasFormat ? "✓" : "—",
+    hasTitle ? "✓" : "—",
+    hasDraftTitle ? "✓" : "—",
+    hasWorkflow ? "✓" : "—"
+  ]);
+}
+
+dv.paragraph(\`**Serial Files**: \${serialComplete}/\${serialFiles.length} complete\`);
+
+if (serialFiles.length > 0) {
+  dv.table(
+    ["File", "stage-status", "format", "title", "draftTitle", "workflow"],
+    serialRows
+  );
+}
+\`\`\`
+
+### revision class
+\`\`\`dataviewjs
+const revisionFiles = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "revision");
+
+const revisionRows = [];
+let revisionComplete = 0;
+
+for (const file of revisionFiles) {
+  const longform = file.longform || {};
+  
+  const hasStage = file.stage !== undefined && file.stage !== null;
+  const hasStageStatus = file["stage-status"] !== undefined && file["stage-status"] !== null;
+  const hasFormat = longform.format !== undefined && longform.format !== null;
+  const hasTitle = longform.title !== undefined && longform.title !== null;
+  const hasDraftTitle = longform.draftTitle !== undefined && longform.draftTitle !== null;
+  const hasWorkflow = longform.workflow !== undefined && longform.workflow !== null;
+  
+  if (hasStage && hasStageStatus && hasFormat && hasTitle && hasDraftTitle && hasWorkflow) {
+    revisionComplete++;
+  }
+  
+  revisionRows.push([
+    file.file.link,
+    hasStage ? "✓" : "—",
+    hasStageStatus ? "✓" : "—",
+    hasFormat ? "✓" : "—",
+    hasTitle ? "✓" : "—",
+    hasDraftTitle ? "✓" : "—",
+    hasWorkflow ? "✓" : "—"
+  ]);
+}
+
+dv.paragraph(\`**Revision Files**: \${revisionComplete}/\${revisionFiles.length} complete\`);
+
+if (revisionFiles.length > 0) {
+  dv.table(
+    ["File", "stage", "stage-status", "format", "title", "draftTitle", "workflow"],
+    revisionRows
+  );
+}
+\`\`\`
+
+### scene class
+\`\`\`dataviewjs
+const allScenes = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "scene");
+
+let serialSceneComplete = 0;
+let serialSceneIncomplete = [];
+let reassemblySceneComplete = 0;
+let reassemblySceneIncomplete = [];
+
+for (const scene of allScenes) {
+  if (scene.stage === "serial-draft") {
+    // Serial-draft scenes need: stage, serial-status, chapter
+    const hasStage = scene.stage !== undefined && scene.stage !== null;
+    const hasSerialStatus = scene["serial-status"] !== undefined && scene["serial-status"] !== null;
+    const hasChapter = scene.chapter !== undefined && scene.chapter !== null;
+    
+    if (hasStage && hasSerialStatus && hasChapter) {
+      serialSceneComplete++;
+    } else {
+      const missing = [];
+      if (!hasStage) missing.push("stage");
+      if (!hasSerialStatus) missing.push("serial-status");
+      if (!hasChapter) missing.push("chapter");
+      
+      serialSceneIncomplete.push({
+        link: scene.file.link,
+        missing: missing.join(", ")
+      });
+    }
+  } else if (["reassembly", "1st-edit", "2nd-edit", "3rd-edit", "final"].includes(scene.stage)) {
+    // Reassembly+ scenes need: stage, stage-status, chapter, context
+    const hasStage = scene.stage !== undefined && scene.stage !== null;
+    const hasStageStatus = scene["stage-status"] !== undefined && scene["stage-status"] !== null;
+    const hasChapter = scene.chapter !== undefined && scene.chapter !== null;
+    const hasContext = scene.context !== undefined && scene.context !== null;
+    
+    if (hasStage && hasStageStatus && hasChapter && hasContext) {
+      reassemblySceneComplete++;
+    } else {
+      const missing = [];
+      if (!hasStage) missing.push("stage");
+      if (!hasStageStatus) missing.push("stage-status");
+      if (!hasChapter) missing.push("chapter");
+      if (!hasContext) missing.push("context");
+      
+      reassemblySceneIncomplete.push({
+        link: scene.file.link,
+        missing: missing.join(", ")
+      });
+    }
+  }
+}
+
+dv.paragraph(\`**Serial-Draft Scenes**: \${serialSceneComplete} complete, \${serialSceneIncomplete.length} incomplete\`);
+
+if (serialSceneIncomplete.length > 0) {
+  dv.table(
+    ["Scene", "Missing Fields"],
+    serialSceneIncomplete.map(s => [s.link, s.missing])
+  );
+}
+
+dv.paragraph(\`**Reassembly+ Scenes**: \${reassemblySceneComplete} complete, \${reassemblySceneIncomplete.length} incomplete\`);
+
+if (reassemblySceneIncomplete.length > 0) {
+  dv.table(
+    ["Scene", "Missing Fields"],
+    reassemblySceneIncomplete.map(s => [s.link, s.missing])
+  );
+}
+\`\`\`
+
+### archive/changelog class
+\`\`\`dataviewjs
+const changelogs = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.category && p.category.includes("changelog"))
+  .where(p => !p.file.path.includes("CHANGELOG.md"));
+
+let changelogComplete = 0;
+const changelogIncomplete = [];
+
+for (const file of changelogs) {
+  const hasSessionType = file["session-type"] !== undefined && file["session-type"] !== null;
+  const hasCommitSha = file["commit-sha"] !== undefined && file["commit-sha"] !== null;
+  const hasFilesModified = file["files-modified"] !== undefined && file["files-modified"] !== null;
+  const hasFilesCreated = file["files-created"] !== undefined && file["files-created"] !== null;
+  const hasFilesArchived = file["files-archived"] !== undefined && file["files-archived"] !== null;
+  
+  if (hasSessionType && hasCommitSha && hasFilesModified && hasFilesCreated && hasFilesArchived) {
+    changelogComplete++;
+  } else {
+    const missing = [];
+    if (!hasSessionType) missing.push("session-type");
+    if (!hasCommitSha) missing.push("commit-sha");
+    if (!hasFilesModified) missing.push("files-modified");
+    if (!hasFilesCreated) missing.push("files-created");
+    if (!hasFilesArchived) missing.push("files-archived");
+    
+    changelogIncomplete.push({
+      link: file.file.link,
+      missing: missing.join(", ")
+    });
+  }
+}
+
+dv.paragraph(\`**Changelog Entries**: \${changelogComplete} complete, \${changelogIncomplete.length} incomplete\`);
+
+if (changelogIncomplete.length > 0) {
+  dv.table(
+    ["Entry", "Missing Fields"],
+    changelogIncomplete.map(f => [f.link, f.missing])
+  );
+}
+\`\`\`
+
+### archive/drafts class (pre-removal validation)
+\`\`\`dataviewjs
+const draftFiles = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.class === "revision")
+  .where(p => p.file.path.includes("DRAFTS"));
+
+let draftComplete = 0;
+const draftIncomplete = [];
+
+for (const file of draftFiles) {
+  const hasStage = file.stage !== undefined && file.stage !== null;
+  const hasStageStatus = file["stage-status"] !== undefined && file["stage-status"] !== null;
+  const hasFormat = file.format !== undefined && file.format !== null;
+  const hasTitle = file.title !== undefined && file.title !== null;
+  const hasDraftTitle = file.draftTitle !== undefined && file.draftTitle !== null;
+  const hasWorkflow = file.workflow !== undefined && file.workflow !== null;
+  const hasScenes = file.scenes && Array.isArray(file.scenes) && file.scenes.length > 0;
+  
+  if (hasStage && hasStageStatus && hasFormat && hasTitle && hasDraftTitle && hasWorkflow && hasScenes) {
+    draftComplete++;
+  } else {
+    const missing = [];
+    if (!hasStage) missing.push("stage");
+    if (!hasStageStatus) missing.push("stage-status");
+    if (!hasFormat) missing.push("format");
+    if (!hasTitle) missing.push("title");
+    if (!hasDraftTitle) missing.push("draftTitle");
+    if (!hasWorkflow) missing.push("workflow");
+    if (!hasScenes) missing.push("scenes");
+    
+    draftIncomplete.push({
+      link: file.file.link,
+      missing: missing.join(", ")
+    });
+  }
+}
+
+dv.paragraph(\`**Draft Snapshots**: \${draftComplete} complete, \${draftIncomplete.length} incomplete (⚠️ *pre-removal validation*)\`);
+
+if (draftIncomplete.length > 0) {
+  dv.paragraph(\`⚠️ These drafts are incomplete and should not be removed from the workflow:\`)
+  dv.table(
+    ["Draft", "Missing Fields"],
+    draftIncomplete.map(f => [f.link, f.missing])
+  );
+} else if (draftComplete > 0) {
+  dv.paragraph(\`✓ All draft snapshots are complete and eligible for archival.\`);
+}
+\`\`\`
+
+### changelog staleness
+\`\`\`dataviewjs
+const allChangelogs = dv.pages('#${ storyNameNoSpaces }')
+  .where(p => p.category && p.category.includes("changelog"))
+  .where(p => !p.file.path.includes("CHANGELOG.md"));
+  .sort(p => p.created, 'desc');
+
+if (allChangelogs.length === 0) {
+  dv.paragraph("No changelog entries found.");
+} else {
+  const lastEntry = allChangelogs[0];
+  const lastDate = lastEntry.created ? dv.date(lastEntry.created) : null;
+  
+  if (!lastDate) {
+    dv.paragraph("Last changelog entry has no date.");
+  } else {
+    const daysSince = Math.floor((dv.date("today") - lastDate) / (1000 * 60 * 60 * 24));
+    
+    if (daysSince === 0) {
+      dv.paragraph(\`✓ Last work session: today\`);
+    } else if (daysSince === 1) {
+      dv.paragraph(\`Last work session: 1 day ago\`);
+    } else {
+      dv.paragraph(\`⚠️ Last work session: \${daysSince} days ago (\${lastDate.toFormat("yyyy-MM-dd")})\`);
+    }
+  }
+}
+\`\`\`
+
+### stage transitions (all time)
+\`\`\`dataview
+TABLE WITHOUT ID
+	file.link as Entry,
+	created as Date,
+	stage-transition as Transition
 FROM
 	#${ storyNameNoSpaces }
 WHERE
-	contains(class, "scene") AND
-	contains(stage, "3rd-edit") AND
-	context
-FLATTEN
-	context as source
-GROUP BY
-	source
+	contains(category, "changelog") AND
+	stage-transition
 SORT
-	source ASC
+	date DESC
 \`\`\`
 
-# in-line comments tracking
-
-**Scenes with Editorial Comments (ME tag):** 
+### draft snapshots existence
 \`\`\`dataviewjs
-const pages = dv.pages("#${ storyNameNoSpaces }")
-	.where(p => \`\${p.class}\`.includes("scene"))
-	.where(p => \`\${p.stage}\`.includes("3rd-edit")
-	);
+const stages = ["serial-draft", "reassembly", "1st-edit", "2nd-edit", "3rd-edit", "final"];
+const archiveFolder = dv.current().file.folder;
+const basePath = \`\${archiveFolder}/DRAFTS\`;
 
 const results = [];
-for (const page of pages) {
-	const file = app.vault.getAbstractFileByPath(page.file.path);
-	if (!file) continue;
-	const content = await app.vault.read(file);
-	if (content && content.includes("<!-- ME:")) {
-		results.push(page.file.link);
-	}
+for (const stage of stages) {
+  const path = \`\${basePath}/\${stage}\`;
+  const folder = app.vault.getAbstractFileByPath(path);
+  const exists = folder ? "✓" : "⚠️ Missing";
+  results.push([stage, exists]);
 }
 
-dv.list(results);
+dv.table(["Stage", "Snapshot Status"], results);
 \`\`\`
 
+---
+
+# archive operations guide
+
+## purpose
+
+This guide describes two archival systems used across story projects:
+
+1. **CHANGELOG capture** for daily story progression and project evolution.
+2. **DRAFTS archival** for revision-stage snapshots during editorial promotion.
+
+The practices below are project-agnostic and intended for any multi-draft fiction workflow.
+
+---
+
+## 1. CHANGELOG capture (story progression + project evolution)
+
+### scope
+
+The changelog records both creative and operational movement for each work session:
+
+- Story progression (scene development, structural updates, character/arc movement)
+- Project evolution (workflow changes, metadata adjustments, file organization)
+- Publication-adjacent prep (archive updates, output readiness, release logistics)
+
+### required record fields
+
+Each changelog entry should include:
+
+- **Date** of work session
+- **Session type** (\`writing\` | \`project\` | \`editorial\` | \`planning\` | \`mixed\`)
+- **Digital assistant attribution** (if applicable; should only ever be about generating changelogs or other such documentation)
+- **Commit SHA** (filled after commit)
+- **Branch** used for changes
+- **Commit message keywords** (see [[#commit message conventions]] for discovery)
+- **Scenes edited** (count of scene files modified)
+- **Files modified** (total count including scenes)
+- **Files created** (new files this session)
+- **Files archived** (files moved to archive)
+- **Stage transition** (stage name if promoted, e.g., \`1st-edit\`, or empty)
+- **Tags** for retrieval and reporting
+
+### content requirements
+
+Each entry should capture, at minimum:
+
+- What changed
+- Which files were modified/created/archived
+- Why key decisions were made
+- What remains next (writing-specific priorities)
+
+### writing vs. project distinction
+
+To keep records useful over time:
+
+- Track **writing outcomes** as narrative progress
+- Track **project outcomes** as process, tooling, and organizational changes
+- Keep next steps focused on actionable writing milestones
+
+### quality standard
+
+A valid changelog entry must allow a collaborator to reconstruct:
+
+- Session intent
+- Concrete outputs
+- Decision rationale
+- Immediate next writing actions
+
+### CHANGELOG-template
+
+A \`CHANGELOG-template.md\` is provided. Each session should be topped off with the generation of a changelog using this template. It will help maintain consistency in capturing historical data, and provide a comprehensive and granular review of the state of the story and the project.
+
+### commit message conventions
+
+To maintain discoverability of commits across the project lifecycle, use standardized keywords in commit messages:
+
+- **\`feat:\`** for new features, scenes, or structural additions (e.g., \`feat: add reassembly scene expansion\`)
+- **\`refactor:\`** for reorganization, frontmatter updates, or metadata restructuring (e.g., \`refactor: update scene context links\`)
+- **\`archive:\`** for snapshot creation and stage transitions (e.g., \`archive: snapshot of reassembly completion\`)
+- **\`docs:\`** for documentation, template, or workflow updates (e.g., \`docs: update revision workflow spec\`)
+- **\`fix:\`** for corrections, continuity fixes, or unresolved comment resolution (e.g., \`fix: resolve timeline inconsistency\`)
+
+These prefixes enable quick discovery via git search without requiring changelog lookups.
+
+### git commands for commit discovery
+
+\`\`\`bash
+# Find all scene feature additions
+git log --grep="feat:" --oneline
+
+# Find all archive/stage transitions
+git log --grep="archive:" --oneline
+
+# Find all revisions in a specific stage
+git log --grep="reassembly" --oneline
+
+# Find commits by date range
+git log --since="2026-02-01" --until="2026-03-01" --oneline
+
+# Find all commits touching a specific scene
+git log -- "reassembly/scene-name.md"
+
+# Find commits containing editorial keywords
+git log --grep="revision\|editorial\|feedback" --oneline
+\`\`\`
+
+
+---
+
+## 2. DRAFTS archival process (revision workflow)
+
+### core principle
+
+Each revision stage is an independent working draft. When promoting to a new stage, preserve the previous stage as an immutable snapshot.
+
+### canonical archive location
+
+Store stage snapshots under:
+
+- \`ARCHIVE/DRAFTS/[revision stage]\`
+
+Examples:
+
+- \`ARCHIVE/DRAFTS/serial-draft\`
+- \`ARCHIVE/DRAFTS/reassembly\`
+- \`ARCHIVE/DRAFTS/1st-edit\`
+
+### stage transition protocol
+
+Before promotion to the next revision stage:
+
+1. Confirm current-stage editorial comments are resolved or explicitly marked unresolved.
+2. Create/update the snapshot in \`ARCHIVE/DRAFTS/[revision stage]\`.
+3. Preserve the stage as a stable historical record before additional edits continue elsewhere.
+
+During promotion:
+
+1. Copy or migrate scene files into the next stage workspace.
+2. Update stage metadata to reflect the new revision stage.
+3. Reset stage-progress fields for the new pass if copying scene files.
+4. Extend revision-history tracking while preserving prior stage history.
+
+After promotion:
+
+1. Record the transition in the session changelog.
+2. Commit archive and stage-promotion changes with explicit transition language.
+
+### metadata expectations across stages
+
+For reliable lineage and archival integrity, maintain consistent scene metadata for:
+
+- Current revision stage
+- Source linkage to prior scene(s)/chapter(s)
+- Stage progress state
+- Revision history entries by stage/editor/date/focus
+
+### archival integrity rules
+
+- Archived stage snapshots are historical records, not active drafting spaces.
+- New revision work happens only in the promoted stage.
+- If rework is required, create a new archival event rather than overwriting prior history.
+
+---
+
+## operational governance
+
+### end-of-session minimum
+
+A session is complete only when both are true:
+
+- CHANGELOG entry is created/updated with accurate session outcomes.
+- DRAFTS archival state reflects any revision-stage transition performed that session.
+
+### audit readiness
+
+At any time, the archive should answer:
+
+- What changed today?
+- Which revision stage is active?
+- What prior stage snapshot exists?
+- What is the next writing priority?
+
+---
+
+*When the manuscript shifts, the archive remembers. Precision in record-keeping is what keeps long-form storytelling coherent across drafts, editors, and time.*
 `
 }
 
 /**
- * Generates the final edit stage configuration document.
+ * Generates a standardized changelog entry template.
  * 
- * Creates a Longform project configuration for the publication-ready version.
- * This stage contains the polished, completed manuscript ready for export to
- * publication formats (PDF, EPUB, etc.). Includes scene lineage tracking and
- * final comment verification.
+ * Creates a template for recording work session details including story development,
+ * technical updates, publication preparation, commit information, and next steps.
+ * Follows structured format for tracking files modified/created/archived and
+ * maintaining project history with proper metadata.
  * 
- * @function finalEditTemplate
- * @param {Object} tp - Templater plugin API object
+ * @function generateChangelogTemplate
  * @param {Object} options - Template options
- * @param {string} options.storyName - Story project name
  * @param {string} options.storyNameNoSpaces - Story name formatted for tags (lowercase, hyphenated)
- * @returns {string} Markdown content for final stage configuration
+ * @returns {string} Markdown template with frontmatter for changelog entry creation
  */
-function finalEditTemplate(tp, options) {
+function generateChangelogTemplate(options) {
+	
+	const {
+		storyNameNoSpaces
+	} = options;
 
-		const {
-				storyName,
-				storyNameNoSpaces
-		} = options;
-
-		return `---
-class: story draft
-category: draft
+	return `---
+class: archive
+category:
+  - changelog
 created:
 updated:
-stage: final
-stage-status:
-longform:
-  format: scenes
-  title: ${ storyName }
-  draftTitle: ${ tp.file.folder() }
-  workflow: Revision Workflow
-  sceneFolder: /
-  scenes:
-context:
+session-type:
+digital-assistant:
+commit-sha:
+branch: main
+scenes-edited: 0
+files-modified: 0
+files-created: 0
+files-archived: 0
+stage-transition:
 tags:
+  - changelog
   - ${ storyNameNoSpaces }
 ---
 
-# scene tracking
+# Changelog - \{\{date:YYYY-MM-DD\}\}
 
-## 3rd-edit → final
-\`\`\`dataview
-TABLE WITHOUT ID
-	source as "3rd-edit Scene",
-	rows.file.link as "final Scenes"
-FROM
-	#${ storyNameNoSpaces }
-WHERE
-	contains(class, "scene") AND
-	contains(stage, "final") AND
-	context
-FLATTEN
-	context as source
-GROUP BY
-	source
-SORT
-	source ASC
-\`\`\`
+*some thematic element from the story*
 
-# in-line comments tracking
+> [!important] About the \`created\` and \`updated\` properties
+> These two properties are managed by a plugin; leave these two fields blank and remove this callout when generating a new changelog. The fields will be filled automatically. 
 
-**Scenes with Editorial Comments (ME tag):** 
-\`\`\`dataviewjs
-const pages = dv.pages("#${ storyNameNoSpaces }")
-	.where(p => \`\${p.class}\`.includes("scene"))
-	.where(p => \`\${p.stage}\`.includes("final")
-	);
+## Changes Made
 
-const results = [];
-for (const page of pages) {
-	const file = app.vault.getAbstractFileByPath(page.file.path);
-	if (!file) continue;
-	const content = await app.vault.read(file);
-	if (content && content.includes("<!-- ME:")) {
-		results.push(page.file.link);
-	}
-}
+### Story Development
+- [ ] Scene additions/modifications
+- [ ] Character development progress  
+- [ ] Plot advancement
+- [ ] Dialogue refinements
 
-dv.list(results);
-\`\`\`
+### Technical Updates
+- [ ] File organization improvements
+- [ ] Metadata updates
+- [ ] Template modifications
+- [ ] Workflow enhancements
+
+### Publication Preparation
+- [ ] Social media integration updates
+- [ ] Archive management
+- [ ] Output generation improvements
+
+## Detailed Change Log
+
+### Files Modified
+- \`file-name.md\`: Description of changes
+- \`other-file.md\`: Description of changes
+
+### New Files Created
+- \`new-file.md\`: Purpose and content description
+
+### Files Removed/Archived
+- \`old-file.md\`: Reason for removal/archiving
+
+## Conversation Summary
+
+### Key Discussions
+Brief summary of any significant conversations that drove today's changes.
+
+### Decisions Made
+Important project decisions and their rationale.
+
+### Digital Assistant Contributions
+*If digital-assistant field is filled above, describe the AI's role in advancing the project:*
+
+## Commit Information
+
+**Commit SHA**: [To be filled during commit process]
+**Commit Message**: [To be filled during commit process]
+*Use keyword prefixes for discoverability: \`feat:\` (new scenes), \`refactor:\` (structural), \`archive:\` (snapshots), \`docs:\` (documentation), \`fix:\` (corrections). See [[Calamity/Backstage/House/ARCHIVE/ARCHIVE#commit message conventions|commit conventions]] for details.*
+**Files in Commit**: [To be filled during commit process]
+
+## Next Steps (Writing-Specific)
+
+### Immediate Writing Tasks
+- [ ] Next scene to develop
+- [ ] Character arcs to advance  
+- [ ] Plot points to address
+- [ ] Dialogue scenes to craft
+
+### Upcoming Story Milestones
+- [ ] Scene completion targets
+- [ ] Chapter/section goals
+- [ ] Character development objectives
+- [ ] Narrative arc progressions
+
+### Creative Considerations
+- [ ] Atmosphere/tone adjustments needed
+- [ ] Pacing concerns to address
+- [ ] Horror elements to enhance
+- [ ] Character motivations to deepen
+
+---
+
+*some other thematic element from the story*
 
 `
 }
